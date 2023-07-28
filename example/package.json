@@ -4,7 +4,7 @@
   "scripts": {
     "build": "evidence build",
     "build:strict": "evidence build:strict",
-    "dev": "evidence dev --open /",
+    "dev": "evidence dev",
     "test": "evidence build",
     "build:sources": "evidence build:sources"
   },
@@ -16,11 +16,16 @@
   "dependencies": {
     "@evidence-dev/core-components": "usql",
     "@evidence-dev/evidence": "usql",
-    "@evidence-dev/faker-datasource": "usql"
+    "@evidence-dev/faker-datasource": "usql",
+    "@brianmd/evidence-usql-datatable": "1.0.0"
+  },
+  "resolutions": {
+    "@evidence-dev/universal-sql": "usql"
   },
   "overrides": {
     "jsonwebtoken": "9.0.0",
     "trim@<0.0.3": ">0.0.3",
-    "sqlite3": "5.1.5"
+    "sqlite3": "5.1.5",
+    "svelte": "4.0.0"
   }
 }
