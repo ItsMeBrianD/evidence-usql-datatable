@@ -99,15 +99,10 @@ export class Pivot extends BaseStore<ArrowTable> {
 		for (const sortCol of sorts) {
 			const sortIsTable = get(this.tableColumns).some((c) => c.name === sortCol.name);
 			const sortIsDerived = derivedColumns.some((dc) => dc === sortCol.name);
-			console.log({sortCol, sortIsTable, sortIsDerived})
 			if (sortIsTable || sortIsDerived) {
 				query.orderby(sortCol.sort === 'asc' ? sortCol.name : desc(sortCol.name));
 			}
 		}
-
-		// if (sorts.length) {
-		// 	query.orderby(...sorts.map((s) => (s.sort === 'asc' ? s.name : desc(s.name))));
-		// }
 
 		// Grab a copy before we add selected
 		const pagesQuery = query.clone();
