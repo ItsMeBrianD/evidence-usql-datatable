@@ -1,23 +1,38 @@
-import { browser } from '$app/environment';
 import { BaseStore } from './BaseStore.js';
 import { type Writable, writable, type Readable, derived, get } from 'svelte/store';
-import type { ArrowTable, PrqlMod } from '../types.js';
-import { buildGroupString, buildSortString, getTableSchema } from './pivot.store.help.js';
+import type { ArrowTable, UniversalSqlMod } from '../types.js';
+import { getTableSchema } from './pivot.store.help.js';
 
+import { Query, count, desc, avg, sum, min, max } from '@uwdata/mosaic-sql';
+
+export type Agg = 'avg' | 'sum' | 'min' | 'max';
+export type Sort = 'asc' | 'desc' | undefined;
+
+// TODO: Add ordinals somehow
 export type PivotColumn = {
 	name: string;
 	is_numeric: boolean;
 };
-
 export type TableColumn = PivotColumn & {
 	grouped: boolean;
+	is_numeric: true;
+	aggs?: Agg[];
 };
 
 export type ResultColumn = PivotColumn & {
-	sort: 'asc' | 'desc' | undefined;
+	sort: Sort;
 };
 
-const PossibleSorts = ['asc', 'desc', undefined];
+const PossibleSorts: Sort[] = ['asc', 'desc', undefined];
+
+const aggMap: Record<Agg, (s: string) => unknown> = {
+	avg: avg,
+	sum: sum,
+	min: min,
+	max: max
+};
+
+export type Pagination = { page: number; itemsPerPage: number; pages: number };
 
 export class Pivot extends BaseStore<ArrowTable> {
 	private readonly _tableColumns: Writable<TableColumn[]> = writable([]);
@@ -40,49 +55,78 @@ export class Pivot extends BaseStore<ArrowTable> {
 		([$columns]) => $columns
 	);
 
-	constructor(readonly mod: PrqlMod, readonly usql: UniversalSqlMod, readonly targetTable: string) {
+	constructor(readonly usql: UniversalSqlMod, readonly targetTable: string) {
 		super();
 		this.pub([]);
 		this.update();
 		getTableSchema(usql, targetTable).then((columns) => this._tableColumns.set(columns));
 	}
 
+	private buildSql() {
+		const query = Query.from(this.targetTable);
+		const groups = get(this.tableColumns)
+			.filter((c) => c.grouped)
+			.map((c) => c.name);
+		const sorts = get(this.resultColumns).filter((c) => c.sort);
+		const aggCols = get(this.tableColumns).filter((c) => c.aggs?.length);
+
+		const derivedColumns: string[] = [];
+
+		if (groups.length) {
+			query.groupby(...groups);
+			// TODO: This should become a global agg or something
+			query.select({ rows: count() });
+			derivedColumns.push('rows');
+		}
+
+		if (aggCols.length) {
+			for (const col of aggCols) {
+				for (const agg of col.aggs ?? []) {
+					const aggFunc = aggMap[agg];
+					derivedColumns.push(`${col.name}_${agg}`);
+					query.select({ [`${col.name}_${agg}`]: aggFunc(col.name) });
+				}
+			}
+		}
+
+		if (!aggCols.length && !groups.length) {
+			query.select('*');
+		} else if (groups.length) {
+			query.select(...groups);
+			derivedColumns.push(...groups);
+		}
+
+		for (const sortCol of sorts) {
+			const sortIsTable = get(this.tableColumns).some((c) => c.name === sortCol.name);
+			const sortIsDerived = derivedColumns.some((dc) => dc === sortCol.name);
+			console.log({sortCol, sortIsTable, sortIsDerived})
+			if (sortIsTable || sortIsDerived) {
+				query.orderby(sortCol.sort === 'asc' ? sortCol.name : desc(sortCol.name));
+			}
+		}
+
+		// if (sorts.length) {
+		// 	query.orderby(...sorts.map((s) => (s.sort === 'asc' ? s.name : desc(s.name))));
+		// }
+
+		// Grab a copy before we add selected
+		const pagesQuery = query.clone();
+
+		const { itemsPerPage, page } = get(this.pagination);
+		query.limit(itemsPerPage).offset(page * itemsPerPage);
+
+		return { query: query.toString(), pagesQuery: pagesQuery.toString() };
+	}
+
 	private async update() {
 		// TODO: Cancel previous query when updating (if previous query is running)
-		let prqlQuery = `from ${this.targetTable}`;
-		// Add Groups
-		const groups = get(this.tableColumns)
-			.filter((tc) => tc.grouped)
-			.map((tc) => tc.name);
-		if (groups.length > 0) {
-			prqlQuery +=
-				buildGroupString(groups) + ` ( aggregate { rows = count ${get(this.resultColumns)[0].name} } ) `;
-			prqlQuery += "\n sort { -rows }"
-		}
-		const sorts = get(this.resultColumns).filter((tc) => tc.sort);
-		if (sorts.length > 0) {
-			prqlQuery += buildSortString(sorts);
-		}
-		// Limit to 100 rows
-		// This should be changed to pagination
-		prqlQuery += `\ntake 100`;
-		console.log(prqlQuery);
 		try {
-			const sql = this.mod.compile(prqlQuery);
-			if (!sql) {
-				console.warn(`Failed to execute pivot query against ${this.targetTable}.`, {
-					prql: prqlQuery,
-					sql: sql,
-					targetTable: this.targetTable,
-					groups: this.groups
-				});
-				return;
-			}
-			const result = await this.usql.query(sql);
+			const { query, pagesQuery } = this.buildSql();
+			const result = await this.usql.query(query);
 			this.pub(result);
 			const oldResultColumns = get(this.resultColumns);
 			this._resultColumns.set(
-				result._evidenceColumnTypes.map((ect) => {
+				result._evidenceColumnTypes.map((ect: { name: string; evidenceType: string }) => {
 					return {
 						name: ect.name,
 						is_numeric: ect.evidenceType === 'number',
@@ -90,10 +134,17 @@ export class Pivot extends BaseStore<ArrowTable> {
 					};
 				})
 			);
+			// TODO: Figure out how many rows result would have without a limit/offset
+
+			const pagesSql = `SELECT COUNT(*) / ${
+				get(this.pagination).itemsPerPage
+			} as pages FROM (${pagesQuery});`;
+			const pagesResult = await this.usql.query(pagesSql);
+			const pageNum = Math.ceil(pagesResult[0].pages);
+			this._pagination.update(($pagination) => ({ ...$pagination, pages: pageNum }));
 		} catch (e) {
+			//@ts-expect-error e is an error
 			console.log(e.message);
-			const errorType = JSON.parse<{ inner: PrqlCompileError[] }>(e.message);
-			console.error(errorType.inner[0].display);
 		}
 	}
 
@@ -110,8 +161,9 @@ export class Pivot extends BaseStore<ArrowTable> {
 		// Remove all sorts when changing groupings
 		this._resultColumns.update(($_resultColumns) =>
 			$_resultColumns.map((col) => ({ ...col, sort: undefined }))
-		)
-
+		);
+		// setting page triggers an update
+		this._pagination.update(p => ({...p, page: 0}));
 		this.update();
 	}
 
@@ -125,25 +177,54 @@ export class Pivot extends BaseStore<ArrowTable> {
 		this._resultColumns.update(($_resultColumns) => {
 			const updated = $_resultColumns.map((col) => {
 				if (col.name !== resultCol) return col;
-				console.log(
-					col.sort,
-					PossibleSorts.indexOf(col.sort),
-					(PossibleSorts.indexOf(col.sort) + 1) % PossibleSorts.length
-				);
 				const sortIndex = (PossibleSorts.indexOf(col.sort) + 1) % PossibleSorts.length;
 				return {
 					...col,
 					sort: PossibleSorts[sortIndex]
 				};
 			});
-			console.log({ updated });
 			return updated;
 		});
 		this.update();
 	}
+
+	toggleAgg(tableCol: string, aggType: 'sum' | 'avg' | 'min' | 'max') {
+		this._tableColumns.update(($_tableColumns) =>
+			$_tableColumns.map((col) => {
+				if (col.name !== tableCol) return col;
+				if (!col.aggs) col.aggs = [];
+				if (col.aggs.includes(aggType)) col.aggs = col.aggs.filter((a) => a !== aggType);
+				else col.aggs.push(aggType);
+				return col;
+			})
+		);
+		this.update();
+	}
+
+	// Pagination
+	// TODO: make this a store so reactivity works properly
+
+	private _pagination = writable<Pagination>({ page: 0, itemsPerPage: 20, pages: 0 });
+	readonly pagination: Readable<Pagination> = derived(
+		[this._pagination],
+		([$pagination]) => $pagination
+	);
+
+	nextPage() {
+		this._pagination.update((p) => ({ ...p, page: p.page + 1 }));
+		this.update();
+	}
+	prevPage() {
+		this._pagination.update((p) => ({ ...p, page: p.page - 1 }));
+		this.update();
+	}
+	firstPage() {
+		this._pagination.update((p) => ({ ...p, page: 0 }));
+		this.update();
+	}
+	lastPage() {}
 }
 
 export async function getPivot(usql: UniversalSqlMod, targetTable: string) {
-	const prqlMod = await (browser ? import('prql-js/dist/bundler') : import('prql-js/dist/node'));
-	return new Pivot(prqlMod, usql, targetTable);
+	return new Pivot(usql, targetTable);
 }
