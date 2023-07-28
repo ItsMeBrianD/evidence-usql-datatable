@@ -1,8 +1,8 @@
-import type { PageLoad, PageLoadEvent } from './$types.js';
+import type { PageLoad } from './$types.js';
 
 export const prerender = true;
 
-export const load: PageLoad = async ({ params }: PageLoadEvent) => {
+export const load: PageLoad = async () => {
 	const usql = await import('@evidence-dev/universal-sql/client-duckdb');
 	await usql.initDB();
 	// @ts-expect-error Error in declared types

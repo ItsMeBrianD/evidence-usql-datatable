@@ -1,6 +1,9 @@
+<script context="module">
+	export const evidenceInclude = true;
+</script>
+
 <script lang="ts">
 	import type { Readable } from 'svelte/store';
-	import { getDbContext } from './context.js';
 	import {
 		getPivot,
 		Pivot,
@@ -13,14 +16,12 @@
 
 	export let tableName: string;
 
-	const db = getDbContext();
-
 	let pivot: Pivot;
 	let tableColumns: Readable<TableColumn[]>;
 	let resultColumns: Readable<ResultColumn[]>;
 	let pagination: Readable<Pagination>;
 
-	$: getPivot(db, tableName).then((p) => {
+	$: getPivot(tableName).then((p) => {
 		pivot = p;
 		tableColumns = p.tableColumns;
 		resultColumns = p.resultColumns;
@@ -42,8 +43,6 @@
 			<div class="flex flex-col text-xs text-left w-56">
 				<p class="font-bold text-sm">Table Columns</p>
 				{#each $tableColumns as column (column.name)}
-					<!-- svelte-ignore a11y-no-static-element-interactions -->
-					<!-- svelte-ignore a11y-click-events-have-key-events -->
 					<div class="flex justify-between gap-2 odd:bg-gray-200 px-2">
 						<input class="cursor-pointer" type="checkbox" disabled checked={column.grouped} />
 						<button

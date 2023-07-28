@@ -1,8 +1,9 @@
 import { BaseStore } from './BaseStore.js';
 import { type Writable, writable, type Readable, derived, get } from 'svelte/store';
-import type { ArrowTable, UniversalSqlMod } from '../types.js';
-import { getTableSchema } from './pivot.store.help.js';
-
+import type { ArrowTable } from '../types.js';
+import { getTableParts, getTableSchema } from './pivot.store.help.js';
+import * as usql from '@evidence-dev/universal-sql/client-duckdb';
+// @ts-expect-error @uwdata/mosaic-sql is a javascript package, we can just trust it though.
 import { Query, count, desc, avg, sum, min, max } from '@uwdata/mosaic-sql';
 
 export type Agg = 'avg' | 'sum' | 'min' | 'max';
@@ -15,7 +16,7 @@ export type PivotColumn = {
 };
 export type TableColumn = PivotColumn & {
 	grouped: boolean;
-	is_numeric: true;
+	is_numeric: boolean;
 	aggs?: Agg[];
 };
 
@@ -55,15 +56,17 @@ export class Pivot extends BaseStore<ArrowTable> {
 		([$columns]) => $columns
 	);
 
-	constructor(readonly usql: UniversalSqlMod, readonly targetTable: string) {
-		super();
-		this.pub([]);
+	constructor(readonly targetTable: string) {
+		super([]);
 		this.update();
 		getTableSchema(usql, targetTable).then((columns) => this._tableColumns.set(columns));
 	}
 
 	private buildSql() {
-		const query = Query.from(this.targetTable);
+		const { schema, table } = getTableParts(this.targetTable);
+		console.log({ schema, table });
+
+		const query = Query.from(`${schema ? schema + '.' : ''}${table}`);
 		const groups = get(this.tableColumns)
 			.filter((c) => c.grouped)
 			.map((c) => c.name);
@@ -117,7 +120,7 @@ export class Pivot extends BaseStore<ArrowTable> {
 		// TODO: Cancel previous query when updating (if previous query is running)
 		try {
 			const { query, pagesQuery } = this.buildSql();
-			const result = await this.usql.query(query);
+			const result = await usql.query(query);
 			this.pub(result);
 			const oldResultColumns = get(this.resultColumns);
 			this._resultColumns.set(
@@ -134,7 +137,7 @@ export class Pivot extends BaseStore<ArrowTable> {
 			const pagesSql = `SELECT COUNT(*) / ${
 				get(this.pagination).itemsPerPage
 			} as pages FROM (${pagesQuery});`;
-			const pagesResult = await this.usql.query(pagesSql);
+			const pagesResult = await usql.query(pagesSql);
 			const pageNum = Math.ceil(pagesResult[0].pages);
 			this._pagination.update(($pagination) => ({ ...$pagination, pages: pageNum }));
 		} catch (e) {
@@ -158,7 +161,7 @@ export class Pivot extends BaseStore<ArrowTable> {
 			$_resultColumns.map((col) => ({ ...col, sort: undefined }))
 		);
 		// setting page triggers an update
-		this._pagination.update(p => ({...p, page: 0}));
+		this._pagination.update((p) => ({ ...p, page: 0 }));
 		this.update();
 	}
 
@@ -217,9 +220,12 @@ export class Pivot extends BaseStore<ArrowTable> {
 		this._pagination.update((p) => ({ ...p, page: 0 }));
 		this.update();
 	}
-	lastPage() {}
+	lastPage() {
+		this._pagination.update((p) => ({ ...p, page: p.pages - 1 }));
+		this.update();
+	}
 }
 
-export async function getPivot(usql: UniversalSqlMod, targetTable: string) {
-	return new Pivot(usql, targetTable);
+export async function getPivot(targetTable: string) {
+	return new Pivot(targetTable);
 }

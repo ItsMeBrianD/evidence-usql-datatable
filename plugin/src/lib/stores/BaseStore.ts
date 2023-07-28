@@ -5,6 +5,11 @@ export abstract class BaseStore<T> implements Readable<T> {
 
 	protected currentValue: T;
 
+	constructor(initial: T) {
+		this.currentValue = initial;
+		this.pub(initial);
+	}
+
 	subscribe(sub: (v: T) => unknown): () => void {
 		this.subscribers.add(sub);
 		sub(this.currentValue);

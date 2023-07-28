@@ -26,7 +26,7 @@ export type InformationSchemaColumn = {
 	collation_schema: null;
 	column_default: null;
 	column_name: string;
-    // TODO: Flush this out
+	// TODO: Flush this out
 	data_type: 'BIGINT' | 'DOUBLE' | 'TIMESTAMP' | 'VARCHAR';
 	datetime_precision: null;
 	domain_catalog: null;
