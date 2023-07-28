@@ -1,1 +1,1 @@
-<UsqlDatatable tableName="memory.demo_data.orders"/>
+<UsqlDatatable tableName="demo_data.orders"/>
