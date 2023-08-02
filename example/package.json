@@ -14,13 +14,11 @@
   },
   "type": "module",
   "dependencies": {
+    "@evidence-dev/usql-datatable": "file:../plugin",
     "@evidence-dev/core-components": "usql",
+    "@evidence-dev/duckdb": "usql",
     "@evidence-dev/evidence": "usql",
-    "@evidence-dev/faker-datasource": "usql",
-    "@brianmd/evidence-usql-datatable": "1.0.0"
-  },
-  "resolutions": {
-    "@evidence-dev/universal-sql": "usql"
+    "@evidence-dev/faker-datasource": "usql"
   },
   "overrides": {
     "jsonwebtoken": "9.0.0",
