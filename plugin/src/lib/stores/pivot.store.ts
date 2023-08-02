@@ -1,8 +1,7 @@
 import { BaseStore } from './BaseStore.js';
 import { type Writable, writable, type Readable, derived, get } from 'svelte/store';
-import type { ArrowTable } from '../types.js';
+import type { ArrowTable, UniversalSqlMod } from '../types.js';
 import { getTableParts, getTableSchema } from './pivot.store.help.js';
-import * as usql from '@evidence-dev/universal-sql/client-duckdb';
 // @ts-expect-error @uwdata/mosaic-sql is a javascript package, we can just trust it though.
 import { Query, count, desc, avg, sum, min, max } from '@uwdata/mosaic-sql';
 
@@ -56,7 +55,7 @@ export class Pivot extends BaseStore<ArrowTable> {
 		([$columns]) => $columns
 	);
 
-	constructor(readonly targetTable: string) {
+	constructor(readonly targetTable: string, readonly usql: UniversalSqlMod) {
 		super([]);
 		this.update();
 		getTableSchema(usql, targetTable).then((columns) => this._tableColumns.set(columns));
@@ -120,7 +119,7 @@ export class Pivot extends BaseStore<ArrowTable> {
 		// TODO: Cancel previous query when updating (if previous query is running)
 		try {
 			const { query, pagesQuery } = this.buildSql();
-			const result = await usql.query(query);
+			const result = await this.usql.query(query);
 			this.pub(result);
 			const oldResultColumns = get(this.resultColumns);
 			this._resultColumns.set(
@@ -137,7 +136,7 @@ export class Pivot extends BaseStore<ArrowTable> {
 			const pagesSql = `SELECT COUNT(*) / ${
 				get(this.pagination).itemsPerPage
 			} as pages FROM (${pagesQuery});`;
-			const pagesResult = await usql.query(pagesSql);
+			const pagesResult = await this.usql.query(pagesSql);
 			const pageNum = Math.ceil(pagesResult[0].pages);
 			this._pagination.update(($pagination) => ({ ...$pagination, pages: pageNum }));
 		} catch (e) {
@@ -199,6 +198,16 @@ export class Pivot extends BaseStore<ArrowTable> {
 		this.update();
 	}
 
+	clearAggs(tableCol: string) {
+		this._tableColumns.update(($_tableColumns) => $_tableColumns.map(col => {
+			if (col.name !== tableCol) return col;
+			console.log({col})
+			col.aggs = []
+			return col;
+		}))
+		this.update();
+	}
+
 	// Pagination
 	// TODO: make this a store so reactivity works properly
 
@@ -226,6 +235,6 @@ export class Pivot extends BaseStore<ArrowTable> {
 	}
 }
 
-export async function getPivot(targetTable: string) {
-	return new Pivot(targetTable);
+export async function getPivot(targetTable: string, usql: UniversalSqlMod) {
+	return new Pivot(targetTable, usql);
 }

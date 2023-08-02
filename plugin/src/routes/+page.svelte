@@ -1,4 +1,4 @@
-<script lang="ts">
+<script>
 	import UsqlDatatable from '$lib/UsqlDatatable.svelte';
 
 	let tableName = 'taxi.yellow_jan';
