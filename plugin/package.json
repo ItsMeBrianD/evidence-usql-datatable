@@ -1,6 +1,6 @@
 {
 	"name": "@evidence-dev/usql-datatable",
-	"version": "1.0.1",
+	"version": "1.0.2",
 	"scripts": {
 		"dev": "vite dev",
 		"build": "vite build && npm run package",
@@ -26,7 +26,7 @@
 		"!dist/**/*.spec.*"
 	],
 	"peerDependencies": {
-		"svelte": "^4.0.0"
+		"svelte": ">=3.55.0"
 	},
 	"devDependencies": {
 		"@evidence-dev/universal-sql": "2.0.0-usql.3",
@@ -56,6 +56,7 @@
 	"svelte": "./dist/index.js",
 	"types": "./dist/index.d.ts",
 	"type": "module",
+	"overrides": { "svelte": "^3.59.20" },
 	"dependencies": {
 		"@evidence-dev/component-utilities": "2.0.0-usql.3",
 		"@evidence-dev/tailwind": "^1.0.0",
