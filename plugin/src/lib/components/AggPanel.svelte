@@ -14,16 +14,16 @@
 <p class="font-bold text-sm">Columns</p>
 {#each $tableColumns as column (column.name)}
 	<div class="flex justify-between gap-2 odd:bg-gray-200 px-2">
-		<input class="cursor-pointer" type="checkbox" disabled checked={column.grouped} />
-		<button
-			class="text-left flex-1 cursor-pointer hover:bg-gray-900/10 truncate"
-			on:click={() => pivot.toggleGroup(column.name)}
-		>
-			{column.name}
-		</button>
-		<div class="min-w-fit">
-			{#if !column.grouped && column.is_numeric}
-				<ContextMenu>
+		<ContextMenu>
+			<input class="cursor-pointer" type="checkbox" disabled checked={column.grouped} />
+			<button
+				class="text-left flex-1 cursor-pointer hover:bg-gray-900/10 truncate"
+				on:click={() => pivot.toggleGroup(column.name)}
+			>
+				{column.name}
+			</button>
+			<div class="min-w-fit">
+				{#if !column.grouped && column.is_numeric}
 					<button on:click={() => pivot.clearAggs(column.name)} slot="handle">
 						<Icon src={Abacus} class="w-3 h-3 {column.aggs?.length ? 'text-green-600' : ''}" />
 					</button>
@@ -64,8 +64,8 @@
 							Maximum
 						</button>
 					</div>
-				</ContextMenu>
-			{/if}
-		</div>
+				{/if}
+			</div>
+		</ContextMenu>
 	</div>
 {/each}
